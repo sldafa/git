@@ -9,7 +9,7 @@ history      grow, mark and tweak your common history
 remote       collaborate (see also: git help workflows)
 
 ### command list (do not change this line)
-# command name                          category [deprecated] [common]
+# command name                          category                [common]
 git-add                                 mainporcelain           worktree
 git-am                                  mainporcelain
 git-annotate                            ancillaryinterrogators

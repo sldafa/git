@@ -58,7 +58,11 @@ command_list "$1" |
 sort |
 while read cmd category tags
 do
-	prefix=git-
+	if [ "$category" = guide ]; then
+		prefix=git
+	else
+		prefix=git-
+	fi
 	name=$(echo $cmd | sed "s/^${prefix}//")
 	sed -n '
 		/^NAME/,/'"$cmd"'/H

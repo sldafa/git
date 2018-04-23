@@ -1480,7 +1480,8 @@ static int do_pick_commit(enum todo_command command, struct commit *commit,
 		unborn = get_oid("HEAD", &head);
 		if (unborn)
 			oidcpy(&head, the_hash_algo->empty_tree);
-		if (index_differs_from(unborn ? EMPTY_TREE_SHA1_HEX : "HEAD",
+		if (index_differs_from(unborn ?
+				       oid_to_hex(the_hash_algo->empty_tree) : "HEAD",
 				       NULL, 0))
 			return error_dirty_index(opts);
 	}

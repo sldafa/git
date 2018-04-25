@@ -92,8 +92,6 @@ static struct pack_info {
 	int old_num;
 	int new_num;
 	int nr_alloc;
-	int nr_heads;
-	unsigned char (*head)[20];
 } **info;
 static int num_pack;
 static const char *objdir;
@@ -228,7 +226,6 @@ static void init_pack_info(const char *infofile, int force)
 	for (i = 0; i < num_pack; i++) {
 		if (stale) {
 			info[i]->old_num = -1;
-			info[i]->nr_heads = 0;
 		}
 	}
 

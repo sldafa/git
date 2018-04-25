@@ -23,6 +23,7 @@
 #include "sha1-lookup.h"
 #include "bulk-checkin.h"
 #include "repository.h"
+#include "replace-object.h"
 #include "streaming.h"
 #include "dir.h"
 #include "list.h"
@@ -1239,7 +1240,8 @@ static int sha1_loose_object_info(struct repository *r,
 
 int fetch_if_missing = 1;
 
-int oid_object_info_extended(const struct object_id *oid, struct object_info *oi, unsigned flags)
+int oid_object_info_extended(struct repository *r, const struct object_id *oid,
+			     struct object_info *oi, unsigned flags)
 {
 	static struct object_info blank_oi = OBJECT_INFO_INIT;
 	struct pack_entry e;
@@ -1248,7 +1250,7 @@ int oid_object_info_extended(const struct object_id *oid, struct object_info *oi
 	int already_retried = 0;
 
 	if (flags & OBJECT_INFO_LOOKUP_REPLACE)
-		real = lookup_replace_object(oid);
+		real = lookup_replace_object(r, oid);
 
 	if (is_null_oid(real))
 		return -1;
@@ -1277,20 +1279,20 @@ int oid_object_info_extended(const struct object_id *oid, struct object_info *oi
 	}
 
 	while (1) {
-		if (find_pack_entry(the_repository, real, &e))
+		if (find_pack_entry(r, real, &e))
 			break;
 
 		if (flags & OBJECT_INFO_IGNORE_LOOSE)
 			return -1;
 
 		/* Most likely it's a loose object. */
-		if (!sha1_loose_object_info(the_repository, real->hash, oi, flags))
+		if (!sha1_loose_object_info(r, real->hash, oi, flags))
 			return 0;
 
 		/* Not a loose object; someone else may have just packed it. */
 		if (!(flags & OBJECT_INFO_QUICK)) {
-			reprepare_packed_git(the_repository);
-			if (find_pack_entry(the_repository, real, &e))
+			reprepare_packed_git(r);
+			if (find_pack_entry(r, real, &e))
 				break;
 		}
 
@@ -1298,9 +1300,12 @@ int oid_object_info_extended(const struct object_id *oid, struct object_info *oi
 		if (fetch_if_missing && repository_format_partial_clone &&
 		    !already_retried) {
 			/*
-			 * TODO Investigate haveing fetch_object() return
+			 * TODO Investigate having fetch_object() return
 			 * TODO error/success and stopping the music here.
+			 * TODO Pass a repository struct through fetch_object.
 			 */
+			if (r != the_repository)
+				die(_("partial clones only supported in the_repository"));
 			fetch_object(repository_format_partial_clone, real->hash);
 			already_retried = 1;
 			continue;
@@ -1315,10 +1320,10 @@ int oid_object_info_extended(const struct object_id *oid, struct object_info *oi
 		 * information below, so return early.
 		 */
 		return 0;
-	rtype = packed_object_info(e.p, e.offset, oi);
+	rtype = packed_object_info(r, e.p, e.offset, oi);
 	if (rtype < 0) {
 		mark_bad_packed_object(e.p, real->hash);
-		return oid_object_info_extended(real, oi, 0);
+		return oid_object_info_extended(r, real, oi, 0);
 	} else if (oi->whence == OI_PACKED) {
 		oi->u.packed.offset = e.offset;
 		oi->u.packed.pack = e.p;
@@ -1330,15 +1335,17 @@ int oid_object_info_extended(const struct object_id *oid, struct object_info *oi
 }
 
 /* returns enum object_type or negative */
-int oid_object_info(const struct object_id *oid, unsigned long *sizep)
+int oid_object_info(struct repository *r,
+		    const struct object_id *oid,
+		    unsigned long *sizep)
 {
 	enum object_type type;
 	struct object_info oi = OBJECT_INFO_INIT;
 
 	oi.typep = &type;
 	oi.sizep = sizep;
-	if (oid_object_info_extended(oid, &oi,
-				     OBJECT_INFO_LOOKUP_REPLACE) < 0)
+	if (oid_object_info_extended(r, oid, &oi,
+				      OBJECT_INFO_LOOKUP_REPLACE) < 0)
 		return -1;
 	return type;
 }
@@ -1355,7 +1362,7 @@ static void *read_object(const unsigned char *sha1, enum object_type *type,
 
 	hashcpy(oid.hash, sha1);
 
-	if (oid_object_info_extended(&oid, &oi, 0) < 0)
+	if (oid_object_info_extended(the_repository, &oid, &oi, 0) < 0)
 		return NULL;
 	return content;
 }
@@ -1392,8 +1399,8 @@ void *read_object_file_extended(const struct object_id *oid,
 	const struct packed_git *p;
 	const char *path;
 	struct stat st;
-	const struct object_id *repl = lookup_replace ? lookup_replace_object(oid)
-						      : oid;
+	const struct object_id *repl = lookup_replace ?
+		lookup_replace_object(the_repository, oid) : oid;
 
 	errno = 0;
 	data = read_object(repl->hash, type, size);
@@ -1753,7 +1760,7 @@ int has_sha1_file_with_flags(const unsigned char *sha1, int flags)
 	if (!startup_info->have_repository)
 		return 0;
 	hashcpy(oid.hash, sha1);
-	return oid_object_info_extended(&oid, NULL,
+	return oid_object_info_extended(the_repository, &oid, NULL,
 					flags | OBJECT_INFO_SKIP_CACHED) >= 0;
 }
 
@@ -1996,7 +2003,7 @@ int read_pack_header(int fd, struct pack_header *header)
 
 void assert_oid_type(const struct object_id *oid, enum object_type expect)
 {
-	enum object_type type = oid_object_info(oid, NULL);
+	enum object_type type = oid_object_info(the_repository, oid, NULL);
 	if (type < 0)
 		die("%s is not a valid object", oid_to_hex(oid));
 	if (type != expect)
